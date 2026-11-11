@@ -25,15 +25,19 @@ web/              the app (served as-is; GitHub Pages root)
   ui.js           h() DOM helper, icons, shared controls (segmented, stepper, toast)
   units.js        g/oz and °C/°F conversion + formatting (weights, money, dates)
   derive.js       derived values (SPEC §4): pure functions, never persisted
-  screens/        one module per tab; a tab's sub-pages are sibling modules (bean-detail, bean-form, purchase-form)
-  store/          index.js (interface) · local.js (localStorage) · settings.js · photos.js (IndexedDB) · ids.js
+  roast-session.js  live-roast state changes (taps, merging, undo, toRoast): pure functions
+  wakelock.js     Screen Wake Lock with state reporting; image.js photo downscaling
+  screens/        one module per tab; a tab's sub-pages are sibling modules (bean-detail, bean-form, purchase-form,
+                  roast-finish); roast.js is a screen without a tab (#/roast/new setup, #/roast/live, full screen)
+  store/          index.js (interface) · local.js (localStorage) · active.js (roast-active) · settings.js · photos.js (IndexedDB) · ids.js
+tests/            node --test unit tests for derive.js and roast-session.js (no dependencies; not served)
   sw.js           service worker; cache "roast-dev" in the repo, stamped at deploy
   manifest.json, icon.svg, icon-192/512.png, apple-touch-icon.png
 scripts/
   serve.js        local preview server (no-store headers, kill-switch sw.js)
   make-icons.js   renders web/icon.svg → PNGs via headless Chrome/Edge
   check-shell.js  fails if APP_SHELL in sw.js and the files in web/ disagree
-.github/workflows/deploy.yml   on push to main: check-shell → stamp cache → deploy web/ to Pages
+.github/workflows/deploy.yml   on push to main: check-shell → node --test → stamp cache → deploy web/ to Pages
 docs/SPEC.md      product spec
 ```
 
@@ -46,9 +50,15 @@ docs/SPEC.md      product spec
 - Use `mount(parent, …)` from `ui.js`, not `parent.append(…)`, whenever a child may be `null`. `append` renders a null child as the text "null".
 - Sub-pages use `subHeader({ backLabel, onBack: () => goBack(parentRoute) })`. After saving a form, use `goBack()`; after creating a record, use `navigate(…, { replace: true })`. That keeps forms out of the Back history.
 
+## Tests
+
+- **Run `node --test` before committing** logic changes. It runs `tests/*.test.mjs` with no dependencies, and the deploy fails if any test fails.
+- Keep the logic that's easy to get wrong in pure modules (`derive.js`, `roast-session.js`): no DOM, no store, time passed in as `nowMs`. Then it can be tested here.
+
 ## Notes
 
 - Data access goes through the store module only. UI code never touches `localStorage` or Firestore directly. See SPEC § Architecture.
 - Derived values (weight loss %, development time and ratio, time at each setting, days since roast, remaining stock) are computed on read and never persisted.
 - Store canonical units (grams, °C, seconds). Convert to the user's chosen units only for display and input.
-- Use Pointer Events and big tap targets on the live roast screen. It is used one-handed, next to a hot roaster.
+- Use Pointer Events and big tap targets on the live roast screen. It is used one-handed, next to a hot roaster. Its targets are at least 56 px with at least 8 px gaps. Anything destructive needs a hold (`holdButton`) or an in-app `confirmSheet`, never `window.confirm`.
+- Live-roast time is always `Date.now() − chargedAt`. Never count timer ticks; intervals only repaint.

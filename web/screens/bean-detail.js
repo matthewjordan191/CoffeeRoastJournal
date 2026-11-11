@@ -6,9 +6,10 @@ import { formatWeight, formatMoney, formatDate, G_PER_LB } from "../units.js";
 import { purchasedG, roastedG, remainingStockG, stockStatus, avgPricePerG, avgTastingScore } from "../derive.js";
 
 export async function render(root, { beanId }) {
-  const [bean, roasts, tastings, settings] = await Promise.all([
+  const [bean, roasts, active, tastings, settings] = await Promise.all([
     store.beans.get(beanId),
     store.roasts.list(),
+    store.active.get(),
     store.tastings.list(),
     store.settings.get(),
   ]);
@@ -25,8 +26,7 @@ export async function render(root, { beanId }) {
 
   const beanRoasts = roasts.filter(r => r.beanId === bean.id)
     .sort((a, b) => (b.chargedAt ?? 0) - (a.chargedAt ?? 0));
-  // TODO(live roast): include store.active.get() in stock (SPEC §4).
-  const remaining = remainingStockG(bean, roasts);
+  const remaining = remainingStockG(bean, roasts, active);
   const status = stockStatus(remaining, settings.defaultBatchG);
   const perG = avgPricePerG(bean);
   const score = avgTastingScore(bean.id, roasts, tastings);
@@ -49,7 +49,7 @@ export async function render(root, { beanId }) {
       : null,
     h("dl", { class: "stock-card-facts" },
       fact("Purchased", formatWeight(purchasedG(bean), unit)),
-      fact("Roasted", formatWeight(roastedG(bean.id, roasts), unit)),
+      fact("Roasted", formatWeight(roastedG(bean.id, roasts, active), unit)),
       fact("Avg price", perG == null ? "—" : `${formatMoney(perG * G_PER_LB)}/lb`),
       fact("Avg score", score == null ? "—" : `${score.toFixed(1)} / 10`)));
 
@@ -86,12 +86,20 @@ export async function render(root, { beanId }) {
   const roastList = beanRoasts.length
     ? h("ul", { class: "list card" }, beanRoasts.map(r =>
         h("li", null,
-          h("div", { class: "list-row" },
+          h("a", { class: "list-row", href: `#/roasts/${encodeURIComponent(r.id)}/finish` },
             h("div", { class: "list-main" },
               h("span", { class: "list-title" }, new Date(r.chargedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })),
               h("span", { class: "list-meta" }, r.roastLevel || "No level")),
-            h("div", { class: "list-side" }, h("span", { class: "stock" }, formatWeight(r.greenG, unit)))))))
+            h("div", { class: "list-side" }, h("span", { class: "stock" }, formatWeight(r.greenG, unit))),
+            icon("chevron", "icon chevron")))))
     : h("p", { class: "card muted-block" }, "No roasts of this bean yet.");
+  const liveNote = active?.beanId === bean.id
+    ? h("a", { class: "live-banner", href: "#/roast/live" },
+        h("span", { class: "live-dot", "aria-hidden": "true" }),
+        h("span", { class: "list-main" }, h("span", { class: "list-title" }, "Roasting now"),
+          h("span", { class: "list-meta" }, `${formatWeight(active.greenG, unit)} counted as roasted`)),
+        h("span", { class: "banner-return" }, "Return"))
+    : null;
 
   // ---- Actions
   async function toggleArchive() {
@@ -135,7 +143,7 @@ export async function render(root, { beanId }) {
           h("div", { class: "row" }, h("span", { class: "row-hint" }, k), h("span", { class: "row-value" }, v))))
       : null,
     bean.notes ? section("Notes", h("p", { class: "notes-block" }, bean.notes)) : null,
-    h("section", { class: "section" }, h("h2", { class: "section-title" }, "Roasts"), roastList),
+    h("section", { class: "section" }, h("h2", { class: "section-title" }, "Roasts"), liveNote, roastList),
     h("section", { class: "section actions" },
       h("button", { type: "button", class: "btn btn-block", onclick: toggleArchive },
         bean.archived ? "Unarchive" : "Archive"),

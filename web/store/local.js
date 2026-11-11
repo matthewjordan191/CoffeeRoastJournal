@@ -22,7 +22,7 @@ export class StoreError extends Error {
   constructor(code, message) {
     super(message);
     this.name = "StoreError";
-    this.code = code; // "IN_USE" | "ACTIVE_EXISTS" | "INVALID" | "WRITE_FAILED" | "CORRUPT" | "NEWER_SCHEMA"
+    this.code = code; // "IN_USE" | "NO_ACTIVE" | "INVALID" | "WRITE_FAILED" | "CORRUPT" | "NEWER_SCHEMA"
   }
 }
 
@@ -123,11 +123,6 @@ export function createLocalBackend(storage = window.localStorage) {
   });
 
   const roasts = collection("roasts", {
-    guardSave(roast) {
-      if (roast.status !== "active") return;
-      const other = state.roasts.find(r => r.status === "active" && r.id !== roast.id);
-      if (other) throw new StoreError("ACTIVE_EXISTS", "Another roast is already in progress.");
-    },
     // Cascade: a roast's tastings and photo go with it (SPEC §6.2).
     async beforeRemove(roast) {
       const remaining = state.tastings.filter(t => t.roastId !== roast.id);
@@ -140,10 +135,6 @@ export function createLocalBackend(storage = window.localStorage) {
       }
     },
   });
-  roasts.getActive = async () => {
-    const active = state.roasts.find(r => r.status === "active");
-    return active ? clone(active) : null;
-  };
 
   const tastings = collection("tastings", {
     filter: (t, { roastId }) => roastId == null || t.roastId === roastId,

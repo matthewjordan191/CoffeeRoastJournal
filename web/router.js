@@ -4,6 +4,7 @@
 //
 // A screen module exports `title` and `render(root, { params })`. render may
 // be async and may return a cleanup function, called when the screen is left.
+// Optional `fullscreen` (boolean or (params) => boolean) hides the tab bar.
 
 // Each history entry this app creates is stamped with its position
 // (history.state.roastIdx), so an on-screen Back button knows whether
@@ -81,6 +82,11 @@ export function startRouter({ view, nav, screens, fallback }) {
     root.className = "screen";
     root.dataset.screen = name;
     view.replaceChildren(root);
+
+    // Full-screen screens (the live roast) hide the tab bar. `fullscreen` may
+    // be a boolean or a function of the route params.
+    const full = typeof screen.fullscreen === "function" ? screen.fullscreen(params) : !!screen.fullscreen;
+    document.body.classList.toggle("no-tabbar", full);
 
     for (const a of nav.querySelectorAll("a[data-tab]")) {
       if (a.dataset.tab === name) a.setAttribute("aria-current", "page");

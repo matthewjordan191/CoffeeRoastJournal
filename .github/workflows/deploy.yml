@@ -23,8 +23,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Node 22.7+ runs web/*.js as ES modules without a package.json
+      # (module-syntax detection), which the tests rely on.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: Check service worker file list
         run: node scripts/check-shell.js
+
+      - name: Unit tests
+        run: node --test
 
       # Give each deploy its own cache name so installed copies pick up the
       # new files. Fails the deploy if the placeholder isn't found, rather

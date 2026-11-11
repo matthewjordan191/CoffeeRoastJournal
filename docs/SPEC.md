@@ -17,16 +17,16 @@ A personal PWA for logging coffee roasts on a Fresh Roast SR800, tracking green 
 
 ### 2.1 Live roast flow
 
-1. **Start Roast** (from the Roasts screen) opens the setup sheet: bean, green weight (defaults to the batch weight in Settings), ambient temperature, extension tube (default **yes**), purpose and planned rest days, and starting fan and heat (default from Settings). **Roast this again** opens the same sheet pre-filled from an earlier roast (§2.3).
-2. **Charge** starts the timer at t = 0 and creates the in-progress roast in `roast-active` (§3.2.1). It records the `charge` milestone, plus one fan event and one heat event at t = 0 with the starting settings.
+1. **Start Roast** (from the Roasts screen) opens the setup sheet (`#/roast/new`): bean, green weight (defaults to the batch weight in Settings), ambient temperature, extension tube (default **yes**), purpose and planned rest days, and starting fan and heat (default from Settings). **Roast this again** opens the same sheet pre-filled from an earlier roast (§2.3).
+2. **Charge** starts the timer at t = 0, creates the in-progress roast in `roast-active` (§3.2.1) and opens the live screen (`#/roast/live`), replacing setup in the Back history. It records the `charge` milestone, plus one fan event and one heat event at t = 0 with the starting settings.
 3. During the roast, big tap targets let me:
    - **Fan − / +** and **Heat − / +**. Each change logs a timestamped event with the new value. Rapid taps are merged (§2.2).
    - Tap milestones: **Yellowing**, **First crack start**, **First crack end**, **Second crack**. Each can be recorded once. Tapping a recorded one again offers to move it to now.
    - **Display temp** (optional): type a reading, which is logged with the time.
    - **Note** (optional): free text, logged with the time.
    - **Undo** the last logged event, for mis-taps.
-4. **Cool** ends the roast. It records the `cool` milestone and stops the development clock. Total time and development time end here. **This is the moment the roast is written to the store** as a Roast record, and `roast-active` is cleared (§3.2.1).
-5. **Cooling finished** (optional, after Cool) records `coolingDone` as an update to the saved roast. Cooling time is `coolingDone − cool`.
+4. **Cool** ends the roast. It is a **press-and-hold** button (about 0.8 s), so a brush can't end a roast. The `cool` time is taken from when the press *started*. It records the `cool` milestone and stops the development clock. Total time and development time end here. **This is the moment the roast is written to the store** as a Roast record, and `roast-active` is cleared (§3.2.1).
+5. After Cool the app opens the finish form (`#/roasts/<id>/finish`) with a running cooling timer. **Cooling finished** (optional) records `coolingDone` as an update to the saved roast. Cooling time is `coolingDone − cool`. Fan or heat changes during cooling aren't logged in v1, because the roast is already saved at Cool.
 6. The finish form collects roasted weight, roast level, rating, notes and photo. It can be completed later. **The photo works locally from the first build of the live roast.** It is taken with the camera or chosen from the library, downscaled on the device, and saved in IndexedDB (§6.3). It does not wait for Firebase.
 
 ### 2.2 Live roast requirements
@@ -141,12 +141,13 @@ ActiveRoast = {
   chargedAt,          // epoch ms
   milestones, controlEvents, displayTemps, notesLog,   // same shapes as Roast
   planRoastId,        // null, or the earlier roast for "Roast this again" (§2.3)
-  lastTap,            // { control, at, startValue }, the open merge window for rapid taps (§2.2), or null
+  lastTap,            // { fan, heat }: each { at, startValue, t } for that control's open merge window (§2.2), or null
+  undo,               // stack of snapshots for Undo (max 30), so Undo survives a reload
 }
 ```
 
 - **Charge** creates it. **Every event** rewrites it. **Discard** removes it.
-- **Cool** turns it into a Roast: record `cool`, set `totalTimeS`, drop `planRoastId` and `lastTap`, save it with `store.roasts.save()`, then remove `roast-active`.
+- **Cool** turns it into a Roast: record `cool`, set `totalTimeS`, drop `planRoastId`, `lastTap` and `undo`. The pure `toRoast()` in `web/roast-session.js` builds the record, and `store.active.finish(roast)` saves it with `store.roasts.save()`, then removes `roast-active`.
 - **Crash safety:** if the app dies between that save and the removal, startup finds a `roast-active` whose `id` already exists in `roasts` and removes it. The roast is never duplicated.
 - No other screen writes to it. It isn't exported (§5) or synced.
 
@@ -227,7 +228,7 @@ store.roasts.list() / get(id) / save(roast) / remove(id)   // finished roasts on
 store.active.get()                    // ActiveRoast | null, read from roast-active
 store.active.save(activeRoast)        // rewrite roast-active (every live event)
 store.active.discard()                // remove roast-active; writes no Roast
-store.active.finish()                 // at Cool: save it as a Roast, then remove roast-active; returns the Roast
+store.active.finish(roast)            // at Cool: save the Roast built by toRoast(), then remove roast-active; returns it
 store.tastings.list({ roastId? }) / get(id) / save(t) / remove(id)
 store.settings.get() / save(settings)
 store.photos.put(blob) → photoId / get(photoId) → Blob | null / remove(photoId)
@@ -239,7 +240,7 @@ store.subscribe(callback)             // fires after any change; returns an unsu
 - **`store.active` is the same code under every backend.** It always reads and writes localStorage `roast-active`. Only `finish()` touches the backend, through `roasts.save()`. On init, a `roast-active` whose `id` is already in `roasts` is removed (§3.2.1).
 - **localStorage backend (now).** Keys are `roast-beans`, `roast-roasts`, `roast-tastings`, `roast-settings`, `roast-active` and `roast-schema` (the data version, for migrations). Each holds a JSON array or object.
 - **Firestore backend (later).** Collections `users/{uid}/beans`, `users/{uid}/roasts` and `users/{uid}/tastings`, and the document `users/{uid}/meta/settings`. Offline persistence is enabled. On first sign-in, a one-time import copies localStorage data up if the cloud is empty.
-- Derived values live in a separate pure module (`web/derive.js`), never in either backend.
+- Derived values live in a separate pure module (`web/derive.js`), never in either backend. Live-roast state changes (tap merging, undo, Cool) are pure functions in `web/roast-session.js`. Both are unit-tested with `node --test` (`tests/`).
 
 ### 6.3 Photos
 

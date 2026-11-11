@@ -32,6 +32,15 @@ export function formatWeight(g, unit) {
   return `${text} ${unit}`;
 }
 
+/** Seconds as a clock: 75.4 → "1:15", 3725 → "1:02:05". null → "—". */
+export function formatClock(s) {
+  if (s == null || !Number.isFinite(s)) return "—";
+  const total = Math.floor(Math.max(0, s));
+  const h = Math.floor(total / 3600), m = Math.floor((total % 3600) / 60), sec = total % 60;
+  const ss = String(sec).padStart(2, "0");
+  return h ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
+}
+
 /** Dollars: "$12.50". */
 export function formatMoney(n) {
   return n == null || !Number.isFinite(n) ? "—" : `$${n.toFixed(2)}`;

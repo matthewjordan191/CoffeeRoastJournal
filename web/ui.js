@@ -197,3 +197,116 @@ export function toast(message, { error = false } = {}) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => toastEl.classList.remove("show"), error ? 4000 : 1400);
 }
+
+// ---------------------------------------------------------------- dialogs
+//
+// In-app sheets built on <dialog> (focus stays inside; Escape or a tap on
+// the backdrop cancels). Used instead of window.confirm/prompt, which look
+// out of place in the installed app and can't be styled for big targets.
+
+function openSheet(build) {
+  return new Promise(resolve => {
+    const dialog = h("dialog", { class: "sheet" });
+    let settled = false;
+    const finish = value => {
+      if (settled) return;
+      settled = true;
+      dialog.close();
+      dialog.remove();
+      resolve(value);
+    };
+    build(dialog, finish);
+    dialog.addEventListener("cancel", e => { e.preventDefault(); finish(null); });   // Escape
+    dialog.addEventListener("click", e => { if (e.target === dialog) finish(null); }); // backdrop
+    document.body.append(dialog);
+    dialog.showModal();
+  });
+}
+
+/**
+ * Confirm with big buttons. Resolves true / false. The cancel button gets
+ * focus, so a stray Enter never confirms something destructive.
+ */
+export function confirmSheet({ title, body, confirmLabel = "OK", cancelLabel = "Cancel", danger = false }) {
+  return openSheet((dialog, finish) => {
+    const cancel = h("button", { type: "button", class: "btn sheet-btn", autofocus: true, onclick: () => finish(false) }, cancelLabel);
+    const ok = h("button", { type: "button", class: `btn sheet-btn ${danger ? "btn-danger-solid" : "btn-accent"}`, onclick: () => finish(true) }, confirmLabel);
+    mount(dialog,
+      h("h2", { class: "sheet-title" }, title),
+      body ? h("p", { class: "sheet-body" }, body) : null,
+      h("div", { class: "sheet-actions" }, cancel, ok));
+  }).then(v => v === true);
+}
+
+/**
+ * Ask for one value. `validate(text)` returns an error message or null.
+ * Resolves the trimmed text, or null if cancelled.
+ */
+export function inputSheet({ title, label, hint, suffix, inputmode, multiline = false, placeholder, saveLabel = "Save", validate }) {
+  return openSheet((dialog, finish) => {
+    const input = multiline
+      ? h("textarea", { class: "text-input", rows: "3", placeholder })
+      : textInput({ inputmode, placeholder, enterkeyhint: "done" });
+    const f = field({ id: "sheet-input", label, hint, suffix, input });
+    const form = h("form", { method: "dialog", novalidate: true, onsubmit: e => {
+      e.preventDefault();
+      const text = input.value.trim();
+      const error = validate?.(text) ?? (text ? null : "Enter something, or cancel.");
+      if (error) { f.setError(error); input.focus(); return; }
+      finish(text);
+    } },
+      h("h2", { class: "sheet-title" }, title),
+      f.el,
+      h("div", { class: "sheet-actions" },
+        h("button", { type: "button", class: "btn sheet-btn", onclick: () => finish(null) }, "Cancel"),
+        h("button", { type: "submit", class: "btn sheet-btn btn-accent" }, saveLabel)));
+    dialog.append(form);
+    queueMicrotask(() => input.focus());
+  });
+}
+
+/**
+ * Press-and-hold button for actions that must not happen by accident
+ * (Cool). Fires onConfirm(pressStartMs) after `holdMs`; releasing early
+ * cancels and shows `hint`. Pointer Events, so it works for touch and mouse.
+ */
+export function holdButton({ label, holdMs = 800, hint = "Hold to confirm", className = "", onConfirm }) {
+  const fill = h("span", { class: "hold-fill", "aria-hidden": "true" });
+  const text = h("span", { class: "hold-label" }, label);
+  const btn = h("button", { type: "button", class: `hold-btn ${className}`, style: `--hold-ms:${holdMs}ms` }, fill, text);
+  let timer = 0;
+  let startedAt = 0;
+
+  const begin = () => {
+    if (timer) return;
+    startedAt = Date.now();
+    btn.classList.add("holding");
+    timer = setTimeout(() => {
+      timer = 0;
+      btn.classList.remove("holding");
+      onConfirm(startedAt);
+    }, holdMs);
+  };
+  const cancel = () => {
+    if (!timer) return;
+    clearTimeout(timer);
+    timer = 0;
+    btn.classList.remove("holding");
+    text.textContent = hint;
+    setTimeout(() => { text.textContent = label; }, 1600);
+  };
+
+  btn.addEventListener("pointerdown", e => {
+    if (e.button !== 0) return;
+    try { btn.setPointerCapture(e.pointerId); } catch { /* capture is a nicety; the hold still works */ }
+    begin();
+  });
+  btn.addEventListener("pointerup", cancel);
+  btn.addEventListener("pointercancel", cancel);
+  btn.addEventListener("lostpointercapture", cancel);
+  btn.addEventListener("contextmenu", e => e.preventDefault());
+  // Keyboard: hold Space/Enter.
+  btn.addEventListener("keydown", e => { if ((e.key === " " || e.key === "Enter") && !e.repeat) { e.preventDefault(); begin(); } });
+  btn.addEventListener("keyup", e => { if (e.key === " " || e.key === "Enter") cancel(); });
+  return btn;
+}

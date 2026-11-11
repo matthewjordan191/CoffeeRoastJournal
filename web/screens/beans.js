@@ -29,13 +29,13 @@ export function render(root, { params }) {
 const byName = (x, y) => x.name.localeCompare(y.name, undefined, { sensitivity: "base" });
 
 async function renderList(root, showArchived) {
-  const [beans, roasts, settings] = await Promise.all([
+  const [beans, roasts, liveRoast, settings] = await Promise.all([
     store.beans.list({ includeArchived: true }),
     store.roasts.list(),
+    store.active.get(),
     store.settings.get(),
   ]);
-  // TODO(live roast): pass store.active.get() so the in-progress roast counts (SPEC §4).
-  const stock = new Map(beans.map(b => [b.id, remainingStockG(b, roasts)]));
+  const stock = new Map(beans.map(b => [b.id, remainingStockG(b, roasts, liveRoast)]));
   const active = beans.filter(b => !b.archived).sort(byName);
   const archived = beans.filter(b => b.archived).sort(byName);
   const shown = showArchived ? archived : active;

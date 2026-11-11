@@ -7,6 +7,7 @@ import * as beans from "./screens/beans.js";
 import * as tastings from "./screens/tastings.js";
 import * as stats from "./screens/stats.js";
 import * as settings from "./screens/settings.js";
+import * as roast from "./screens/roast.js";
 
 const TABS = [
   ["roasts", roasts],
@@ -25,7 +26,13 @@ nav.append(...TABS.map(([name, screen]) =>
 
 try {
   await store.init("local");
-  startRouter({ view, nav, screens: Object.fromEntries(TABS), fallback: "roasts" });
+  // Closed or reloaded mid-roast: open straight onto the timer. Swapping the
+  // URL before the router starts adds no history entry.
+  if ((await store.active.get()) && !location.hash.startsWith("#/roast/")) {
+    history.replaceState(history.state, "", "#/roast/live");
+  }
+  // `roast` is a screen without a tab: #/roast/new (setup), #/roast/live.
+  startRouter({ view, nav, screens: { ...Object.fromEntries(TABS), roast }, fallback: "roasts" });
 } catch (err) {
   console.error(err);
   view.replaceChildren(h("div", { class: "fatal", role: "alert" },
