@@ -743,8 +743,8 @@ select.text-input { -webkit-appearance: none; appearance: none; background-image
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 .toast.error { color: var(--danger); border-color: var(--danger); }
 
-/* Persistent until tapped; sits above the tab bar (or the home indicator
-   when the tab bar is hidden on the live screen). */
+/* Persistent until tapped; sits above the tab bar. Never shown on the live
+   roast screen (app.js syncUpdateToast). */
 .update-toast {
   position: fixed;
   left: 50%;
@@ -754,7 +754,6 @@ select.text-input { -webkit-appearance: none; appearance: none; background-image
   max-width: calc(100vw - 32px);
   transform: translateX(-50%);
 }
-body.no-tabbar .update-toast { bottom: calc(var(--safe-bottom) + 16px); }
 .update-toast button {
   min-height: 48px;
   padding: 0 20px;

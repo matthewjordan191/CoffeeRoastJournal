@@ -10,6 +10,7 @@ export const MERGE_MS = 2000;   // rapid fan/heat taps closer than this are one 
 export const UNDO_LIMIT = 30;
 export const CONTROL_MIN = 1;
 export const CONTROL_MAX = 9;
+export const COOLING_S = 180;  // the SR800's cool cycle is always 3:00
 
 /** The milestones tapped during a roast, in display order. */
 export const LIVE_MILESTONES = [
@@ -192,7 +193,8 @@ export function lastMilestone(a) {
 /**
  * Cool: turn the in-progress roast into a finished Roast record (SPEC
  * §3.2). `coolPressMs` is when the Cool press *started*, so the hold needed
- * to confirm it doesn't add to the roast time.
+ * to confirm it doesn't add to the roast time. The SR800 always cools for
+ * COOLING_S, so `coolingDone` is recorded right away as cool + 3:00.
  */
 export function toRoast(a, coolPressMs) {
   const t = Math.max(tAt(a, coolPressMs), ...a.milestones.map(m => m.t));
@@ -207,7 +209,7 @@ export function toRoast(a, coolPressMs) {
     extensionTube: a.extensionTube,
     purpose: a.purpose,
     restDaysPlanned: a.restDaysPlanned,
-    milestones: [...clone(a.milestones), { type: "cool", t }],
+    milestones: [...clone(a.milestones), { type: "cool", t }, { type: "coolingDone", t: round1(t + COOLING_S) }],
     controlEvents: clone(a.controlEvents),
     displayTemps: clone(a.displayTemps),
     notesLog: clone(a.notesLog),

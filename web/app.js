@@ -41,6 +41,8 @@ try {
     h("p", null, "Nothing has been changed or deleted.")));
 }
 
+let updateReady = false; // a new version has taken control of this page
+
 if ("serviceWorker" in navigator) {
   // A new deploy's worker calls skipWaiting + clients.claim, so it takes over
   // this open page. The page is still running the old code, so offer a
@@ -49,14 +51,27 @@ if ("serviceWorker" in navigator) {
   // was no old version then, so stay quiet.
   let hadController = !!navigator.serviceWorker.controller;
   navigator.serviceWorker.addEventListener("controllerchange", () => {
-    if (hadController) showUpdateToast();
+    if (hadController) {
+      updateReady = true;
+      syncUpdateToast();
+    }
     hadController = true;
   });
+  // The live roast screen never shows it — it would cover Hold to Cool, and
+  // a reload mid-roast is the last thing to invite. It appears as soon as
+  // the roast is minimized, cooled or discarded (all of which leave the route).
+  window.addEventListener("hashchange", syncUpdateToast);
   navigator.serviceWorker.register("./sw.js").catch(err => console.warn("service worker:", err));
 }
 
-function showUpdateToast() {
-  if (document.getElementById("update-toast")) return;
+function syncUpdateToast() {
+  const existing = document.getElementById("update-toast");
+  const onLiveRoast = location.hash.startsWith("#/roast/live");
+  if (!updateReady || onLiveRoast) {
+    existing?.remove();
+    return;
+  }
+  if (existing) return;
   document.body.append(
     h("div", { id: "update-toast", class: "update-toast", role: "status" },
       h("button", { type: "button", onclick: () => location.reload() },

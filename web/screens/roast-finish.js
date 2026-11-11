@@ -1,15 +1,13 @@
-// After Cool (SPEC §2.1 steps 5–6): cooling timer, then the finish form —
+// After Cool (SPEC §2.1 steps 5–6): 3:00 cooling countdown, then the finish form —
 // roasted weight, level, rating, notes, photo. Everything is optional and
 // can be completed later from the Roasts tab.  Route: #/roasts/<id>/finish
 import { store } from "../store/index.js";
 import { goBack } from "../router.js";
 import { h, mount, subHeader, field, textInput, toast } from "../ui.js";
 import { formatClock, weightValue, toGrams, parseDecimal } from "../units.js";
-import { elapsedS, milestoneT, totalTimeS, developmentS, developmentRatio, phaseTimes, weightLossPct, coolingS } from "../derive.js";
-import { ROAST_LEVELS } from "../roast-session.js";
+import { elapsedS, milestoneT, totalTimeS, developmentS, developmentRatio, phaseTimes, weightLossPct } from "../derive.js";
+import { ROAST_LEVELS, COOLING_S } from "../roast-session.js";
 import { downscaleImage } from "../image.js";
-
-const round1 = v => Math.round(v * 10) / 10;
 
 export async function render(root, { roastId }) {
   const [roast, settings] = await Promise.all([store.roasts.get(roastId), store.settings.get()]);
@@ -24,42 +22,32 @@ export async function render(root, { roastId }) {
   document.title = `${roast.beanName} · Roast Journal`;
   const cleanups = [];
 
-  // ---- cooling
+  // ---- cooling: the SR800 always cools for 3:00, so this is a countdown
+  // that stops by itself. coolingDone was recorded at Cool (cool + 3:00);
+  // roasts saved before that change fall back to the same rule.
   const coolT = milestoneT(roast, "cool");
+  const coolEndT = milestoneT(roast, "coolingDone") ?? coolT + COOLING_S;
   const coolClock = h("p", { class: "cool-clock", role: "timer" });
   const coolLabel = h("p", { class: "stock-card-label" });
-  const coolDoneBtn = h("button", { type: "button", class: "btn btn-accent btn-block" }, "Cooling finished");
-  const coolCard = h("section", { class: "stock-card cooling-card" }, coolLabel, coolClock, coolDoneBtn);
+  const coolCard = h("section", { class: "stock-card cooling-card" }, coolLabel, coolClock);
 
-  let current = roast;
+  let coolTimer = 0;
   function paintCooling() {
-    const done = coolingS(current);
-    if (done != null) {
-      coolLabel.textContent = "Cooled in";
-      coolClock.textContent = formatClock(done);
-      coolDoneBtn.hidden = true;
-      coolCard.classList.add("done");
+    const left = coolEndT - elapsedS(roast.chargedAt, Date.now());
+    if (left > 0) {
+      coolLabel.textContent = "Cooling — time left";
+      coolClock.textContent = formatClock(Math.ceil(left));
     } else {
-      coolLabel.textContent = "Cooling";
-      coolClock.textContent = formatClock(Math.max(0, elapsedS(current.chargedAt, Date.now()) - coolT));
+      coolLabel.textContent = "Cooled in";
+      coolClock.textContent = formatClock(coolEndT - coolT);
+      coolCard.classList.add("done");
+      clearInterval(coolTimer);
     }
   }
-  coolDoneBtn.addEventListener("click", async () => {
-    const t = round1(elapsedS(current.chargedAt, Date.now()));
-    const fresh = await store.roasts.get(roastId);
-    if (!fresh || milestoneT(fresh, "coolingDone") != null) return;
-    try {
-      current = await store.roasts.save({ ...fresh, milestones: [...fresh.milestones, { type: "coolingDone", t }] });
-      paintCooling();
-      toast(`Cooled in ${formatClock(coolingS(current))}`);
-    } catch (err) {
-      toast(err.message, { error: true });
-    }
-  });
   paintCooling();
-  if (coolingS(roast) == null) {
-    const timer = setInterval(paintCooling, 500);
-    cleanups.push(() => clearInterval(timer));
+  if (!coolCard.classList.contains("done")) {
+    coolTimer = setInterval(paintCooling, 500);
+    cleanups.push(() => clearInterval(coolTimer));
   }
 
   // ---- summary

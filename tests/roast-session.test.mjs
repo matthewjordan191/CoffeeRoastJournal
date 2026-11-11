@@ -149,7 +149,7 @@ test("toRoast: cool at the press start, totalTimeS, live-only fields dropped", (
   const r = s.toRoast(a, at(600.04));
   assert.equal(r.id, "roast-1");
   assert.equal(r.totalTimeS, 600);
-  assert.deepEqual(r.milestones.at(-1), { type: "cool", t: 600 });
+  assert.deepEqual(r.milestones.slice(-2), [{ type: "cool", t: 600 }, { type: "coolingDone", t: 780 }], "SR800 cooling is always 3:00");
   for (const k of ["lastTap", "undo", "planRoastId", "status"]) assert.equal(k in r, false, `${k} dropped`);
   assert.equal(r.roastedG, null);
   assert.equal(r.photoId, null);

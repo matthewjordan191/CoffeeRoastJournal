@@ -26,7 +26,7 @@ A personal PWA for logging coffee roasts on a Fresh Roast SR800, tracking green 
    - **Note** (optional): free text, logged with the time.
    - **Undo** the last logged event, for mis-taps.
 4. **Cool** ends the roast. It is a **press-and-hold** button (about 0.8 s), so a brush can't end a roast. The `cool` time is taken from when the press *started*. It records the `cool` milestone and stops the development clock. Total time and development time end here. **This is the moment the roast is written to the store** as a Roast record, and `roast-active` is cleared (§3.2.1).
-5. After Cool the app opens the finish form (`#/roasts/<id>/finish`) with a running cooling timer. **Cooling finished** (optional) records `coolingDone` as an update to the saved roast. Cooling time is `coolingDone − cool`. Fan or heat changes during cooling aren't logged in v1, because the roast is already saved at Cool.
+5. **Cooling is always 3:00 on the SR800**, so Cool also records `coolingDone` at `cool + 180 s`. There's nothing to tap. After Cool the app opens the finish form (`#/roasts/<id>/finish`), which shows a 3:00 countdown that stops by itself. Cooling time is `coolingDone − cool`. Fan or heat changes during cooling aren't logged in v1, because the roast is already saved at Cool.
 6. The finish form collects roasted weight, roast level, rating, notes and photo. It can be completed later. **The photo works locally from the first build of the live roast.** It is taken with the camera or chosen from the library, downscaled on the device, and saved in IndexedDB (§6.3). It does not wait for Firebase.
 
 ### 2.2 Live roast requirements

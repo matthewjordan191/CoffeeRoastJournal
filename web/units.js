@@ -35,7 +35,9 @@ export function formatWeight(g, unit) {
 /** Seconds as a clock: 75.4 → "1:15", 3725 → "1:02:05". null → "—". */
 export function formatClock(s) {
   if (s == null || !Number.isFinite(s)) return "—";
-  const total = Math.floor(Math.max(0, s));
+  // Floor (a running clock shows 0:59 until a full minute has passed), but
+  // absorb float error first: 780.3 − 600.3 is 179.99999999999994, not 180.
+  const total = Math.floor(Math.max(0, s) + 1e-6);
   const h = Math.floor(total / 3600), m = Math.floor((total % 3600) / 60), sec = total % 60;
   const ss = String(sec).padStart(2, "0");
   return h ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
