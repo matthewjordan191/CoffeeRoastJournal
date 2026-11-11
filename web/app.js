@@ -35,5 +35,23 @@ try {
 }
 
 if ("serviceWorker" in navigator) {
+  // A new deploy's worker calls skipWaiting + clients.claim, so it takes over
+  // this open page. The page is still running the old code, so offer a
+  // reload; never reload by ourselves — that could cut into a live roast.
+  // The very first install also fires controllerchange (claim), but there
+  // was no old version then, so stay quiet.
+  let hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (hadController) showUpdateToast();
+    hadController = true;
+  });
   navigator.serviceWorker.register("./sw.js").catch(err => console.warn("service worker:", err));
+}
+
+function showUpdateToast() {
+  if (document.getElementById("update-toast")) return;
+  document.body.append(
+    h("div", { id: "update-toast", class: "update-toast", role: "status" },
+      h("button", { type: "button", onclick: () => location.reload() },
+        "New version ready — tap to reload")));
 }

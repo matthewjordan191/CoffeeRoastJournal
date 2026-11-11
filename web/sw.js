@@ -1,7 +1,7 @@
 // "roast-dev" is a placeholder: the deploy workflow rewrites it to
 // "roast-<commit sha>" so every deploy changes this file's bytes, which is
-// what makes browsers install the new worker and fetch fresh files. Keep the
-// exact text `const CACHE = "roast-dev";` — the workflow matches on it.
+// what makes browsers install the new worker and fetch fresh files. Don't
+// edit the line below — the workflow's sed matches it exactly.
 // The "roast-" prefix matters: this origin is shared with the cocktail app.
 const CACHE = "roast-dev";
 

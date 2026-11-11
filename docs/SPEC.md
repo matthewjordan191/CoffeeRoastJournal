@@ -17,25 +17,40 @@ A personal PWA for logging coffee roasts on a Fresh Roast SR800, tracking green 
 
 ### 2.1 Live roast flow
 
-1. **Start Roast** (from the Roasts screen) opens the setup sheet: bean, green weight (defaults to the batch weight in Settings), ambient temperature, extension tube (default **yes**), purpose and planned rest days, and starting fan and heat (default from Settings).
-2. **Charge** starts the timer at t = 0. It records the `charge` milestone, plus one fan event and one heat event at t = 0 with the starting settings.
+1. **Start Roast** (from the Roasts screen) opens the setup sheet: bean, green weight (defaults to the batch weight in Settings), ambient temperature, extension tube (default **yes**), purpose and planned rest days, and starting fan and heat (default from Settings). **Roast this again** opens the same sheet pre-filled from an earlier roast (§2.3).
+2. **Charge** starts the timer at t = 0 and creates the in-progress roast in `roast-active` (§3.2.1). It records the `charge` milestone, plus one fan event and one heat event at t = 0 with the starting settings.
 3. During the roast, big tap targets let me:
-   - **Fan − / +** and **Heat − / +**. Each change logs a timestamped event with the new value.
+   - **Fan − / +** and **Heat − / +**. Each change logs a timestamped event with the new value. Rapid taps are merged (§2.2).
    - Tap milestones: **Yellowing**, **First crack start**, **First crack end**, **Second crack**. Each can be recorded once. Tapping a recorded one again offers to move it to now.
    - **Display temp** (optional): type a reading, which is logged with the time.
    - **Note** (optional): free text, logged with the time.
    - **Undo** the last logged event, for mis-taps.
-4. **Cool** ends the roast. It records the `cool` milestone and stops the development clock. Total time and development time end here.
-5. **Cooling finished** (optional, after Cool) records `coolingDone`. Cooling time is `coolingDone − cool`.
-6. The finish form collects roasted weight, roast level, rating, notes and photo. It can be completed later.
+4. **Cool** ends the roast. It records the `cool` milestone and stops the development clock. Total time and development time end here. **This is the moment the roast is written to the store** as a Roast record, and `roast-active` is cleared (§3.2.1).
+5. **Cooling finished** (optional, after Cool) records `coolingDone` as an update to the saved roast. Cooling time is `coolingDone − cool`.
+6. The finish form collects roasted weight, roast level, rating, notes and photo. It can be completed later. **The photo works locally from the first build of the live roast.** It is taken with the camera or chosen from the library, downscaled on the device, and saved in IndexedDB (§6.3). It does not wait for Firebase.
 
 ### 2.2 Live roast requirements
 
-- **The timer must survive the app going to the background or the phone locking.** Store the charge moment as an absolute epoch time and compute elapsed as `now − chargeEpoch`. Never count ticks. Save the in-progress roast after every event, so a reload or crash resumes it.
-- Request a **Screen Wake Lock** during a roast where supported, and degrade silently where not.
+- **The timer must survive the app going to the background or the phone locking.** Store the charge moment as an absolute epoch time and compute elapsed as `now − chargedAt`. Never count ticks. Write the in-progress roast to `roast-active` after every event, so a reload or crash resumes it.
+- **Screen Wake Lock:** request it at Charge. If the API is missing, the request is refused, or the lock is lost, show a **visible warning on the live screen**. The lock is lost, for example, when the app goes to the background, and iOS releases it then. The warning reads like "Screen may lock — keep it awake by tapping it, or set Auto-Lock to Never". Never degrade silently. When the app becomes visible again, re-request the lock, and remove the warning once it's held. (Home Screen web apps on iOS only support the lock from iOS 18.4, so expect the warning on older versions.)
+- **Merging rapid fan/heat taps:** taps on the same control less than about **2 s** apart count as one change.
+  - The first tap of a burst logs the ControlEvent at its own time. Each further tap updates that event's `value`, and the 2 s window restarts from the latest tap.
+  - If the burst ends on the value it started from, the event is dropped.
+  - Fan taps and heat taps are merged separately.
+  - The display shows each new value immediately. The event is updated in `roast-active` on every tap, so a crash in the middle of a burst loses nothing.
+- **Full screen:** the live roast is its own route (`#/roast/live`), and **the tab bar is hidden** while it's shown. Leaving it (Back, or a Minimize button) does not stop the roast. The Roasts screen shows a banner that returns to it.
 - Show elapsed time, the current fan and heat, the last milestone, and running development time once first crack has started.
-- Only one roast can be in progress at a time. It can be discarded with a confirmation.
+- Only one roast can be in progress at a time, because there is a single `roast-active` key. It can be discarded with a confirmation, which removes the key and writes nothing.
 - Recorded events can be edited after the roast: adjust times, change values, delete events.
+
+### 2.3 Roast this again
+
+**Roast this again** is on each roast's detail page on the Roasts screen. It starts a new roast that uses the earlier roast as a plan:
+
+- **Setup is pre-filled** with the same bean, the same green weight, and the earlier roast's starting fan and heat (its t = 0 events, not the Settings defaults). Every field stays editable. If that bean is archived or doesn't have enough stock left, show a warning without blocking.
+- **Milestone targets:** each milestone button shows the earlier roast's time for it as a target (e.g. "FC target 7:40"). Once tapped, it also shows the difference (e.g. "+0:12").
+- **Fan/heat prompts:** about **15 s before** each fan or heat change the earlier roast made after t = 0 (and before its Cool), show a prompt such as "In 15 s: Heat → 7", with a countdown. The prompt clears when I make that change, or about 10 s after its planned time. Prompts are visual. An optional chime can be turned on from the live screen; iOS web apps can't vibrate.
+- The plan (the earlier roast's id) is held only in `roast-active`, and is not saved on the finished Roast.
 
 ## 3. Data model
 
@@ -83,7 +98,6 @@ Buying the same coffee again adds a purchase to the existing bean, so its roast 
 | `id` | string | |
 | `beanId` | string | reference to Bean |
 | `beanName` | string | **snapshot** of the bean name at roast time, so history reads correctly even if the bean is renamed |
-| `status` | `"active"` \| `"done"` | `active` while the timer is running |
 | `chargedAt` | number | epoch ms of charge; this is the roast date |
 | `greenG` | number | green weight |
 | `roastedG` | number \| null | roasted weight, entered after cooling |
@@ -114,6 +128,27 @@ Rules:
 - `charge` is always at t = 0, and the fan and heat events at t = 0 are always present.
 - Each milestone type appears at most once.
 - `controlEvents` are kept sorted by `t`. Changes after `cool` are allowed (fan during cooling) but are excluded from time-at-setting stats.
+- Every saved Roast is a finished roast: it always has a `cool` milestone and `totalTimeS`. A roast in progress is never a Roast record.
+
+### 3.2.1 In-progress roast (`roast-active`)
+
+The roast being timed lives in its **own localStorage key, `roast-active`, under every backend**, including Firestore later. Each tap is then a synchronous local write that works offline and can't be delayed by sync. The key holds one JSON object or is absent.
+
+```js
+ActiveRoast = {
+  id,                 // generated at Charge; becomes the Roast's id at Cool
+  beanId, beanName, greenG, ambientC, extensionTube, purpose, restDaysPlanned,
+  chargedAt,          // epoch ms
+  milestones, controlEvents, displayTemps, notesLog,   // same shapes as Roast
+  planRoastId,        // null, or the earlier roast for "Roast this again" (§2.3)
+  lastTap,            // { control, at, startValue }, the open merge window for rapid taps (§2.2), or null
+}
+```
+
+- **Charge** creates it. **Every event** rewrites it. **Discard** removes it.
+- **Cool** turns it into a Roast: record `cool`, set `totalTimeS`, drop `planRoastId` and `lastTap`, save it with `store.roasts.save()`, then remove `roast-active`.
+- **Crash safety:** if the app dies between that save and the removal, startup finds a `roast-active` whose `id` already exists in `roasts` and removes it. The roast is never duplicated.
+- No other screen writes to it. It isn't exported (§5) or synced.
 
 ### 3.3 Tasting
 
@@ -152,25 +187,29 @@ Rules:
 | Days since roast | today − local date of `chargedAt`; "ready" once it is ≥ `restDaysPlanned` |
 | Days post-roast at tasting | tasting `date` − roast date |
 | Brew ratio | `waterG / doseG` (shown as 1:x) |
-| Remaining stock per bean | `Σ purchases.grams − Σ greenG of that bean's roasts` (active roast included) |
+| Remaining stock per bean | `Σ purchases.grams − Σ greenG of that bean's saved roasts − (greenG of the in-progress roast, if it uses this bean)` |
 | Cost per roast | lot price per gram × `greenG`; approximate, using the bean's average price per gram |
 
 ## 5. Screens
 
-Bottom tab bar: **Roasts · Beans · Tastings · Stats · Settings**.
+Bottom tab bar: **Roasts · Beans · Tastings · Stats · Settings**. It is hidden on the live roast screen (§2.2).
 
-- **Roasts.** History, newest first: bean name, date, level, weight loss %, DTR, rating, days since roast. A prominent **Start Roast** button. If a roast is active, a banner returns to it. Roast detail shows a timeline of milestones, control changes, temperature readings and notes, plus the derived values, with **Add tasting** and **Edit**.
+- **Roasts.** History, newest first: bean name, date, level, weight loss %, DTR, rating, days since roast. A prominent **Start Roast** button. While `roast-active` exists, a banner returns to the live screen. Roast detail shows a timeline of milestones, control changes, temperature readings and notes, plus the derived values. It has **Add tasting**, **Edit**, **Roast this again** (§2.3) and **Compare**.
+  - **Compare overlay:** pick up to 4 roasts. Earlier roasts of the same bean are suggested first. Their fan and heat settings are drawn as step lines over time, with milestone markers, all aligned at charge. A toggle aligns them at first crack start instead. Below the chart is a table of milestone times, development time, DTR and weight loss side by side. Inline SVG, no library.
 - **Beans.** Active beans with remaining stock, with an archived toggle. Bean detail shows the purchases list (with **Add purchase**), the roasts of this bean, and the average tasting score.
 - **Tastings.** List, newest first: bean, roast date, method, score, tags. Add a tasting from a chosen roast.
 - **Stats.** Initial set: roast count and green weight roasted (all time and by month); stock on hand per bean; average weight loss by roast level; DTR vs. roast rating; average tasting score by bean and by days post-roast. Charts are inline SVG with no library.
-- **Settings.** Units, default batch weight, default starting fan and heat, sign-in status.
+- **Settings.** Units, default batch weight, default starting fan and heat, sign-in status, and **Data: Export / Import**.
+  - **Export:** one JSON file, `roast-journal-YYYY-MM-DD.json`, containing `{ app: "roast-journal", schemaVersion, exportedAt, settings, beans, roasts, tastings, photos }`. `photos` maps `photoId` to a JPEG data URL. An "Include photos" toggle (default on) leaves them out to keep the file small. On iPhone the file goes to the share sheet (Save to Files), with a download link as the fallback.
+  - **Import:** pick a file. It is validated (app name, `schemaVersion` not newer than the app's, record shapes), then a preview shows the counts before anything is written. **Merge** (the default) upserts by `id`, and the newer `updatedAt` wins. **Replace all** deletes everything first and needs a second confirmation. Import is refused while a roast is in progress, and `roast-active` is never imported.
 
 ## 6. Architecture
 
 ### 6.1 Stack
 
 - Vanilla JS with native ES modules, CSS and HTML. No build step. Hosted on GitHub Pages from `web/`.
-- The service worker caches the app shell. The cache name is `roast-<timestamp>`, and `activate` deletes only `roast-*` caches, because the origin is shared with the cocktail app.
+- The service worker caches the app shell. The deploy workflow stamps the cache name as `roast-<commit sha>`. `activate` deletes only `roast-*` caches, because the origin is shared with the cocktail app.
+- **Updates are never applied by reloading on their own.** When a new service worker takes control of an open page, show a persistent **"New version ready — tap to reload"** toast. Only a tap reloads. The first install, when no worker was in control before, shows nothing.
 - The Firebase SDK comes later, as the modular ES-module build imported from gstatic at a pinned version and precached for offline boot.
 
 ### 6.2 Store module
@@ -184,21 +223,30 @@ store.beans.list({ includeArchived }) // Bean[]
 store.beans.get(id)                   // Bean | null
 store.beans.save(bean)                // upsert; sets id, timestamps; returns the saved record
 store.beans.remove(id)                // refused if roasts reference it (archive instead)
-store.roasts.list() / get(id) / save(roast) / remove(id)   // remove also deletes its tastings and photo, after confirmation in the UI
-store.roasts.getActive()              // the roast with status "active", or null
+store.roasts.list() / get(id) / save(roast) / remove(id)   // finished roasts only; remove also deletes its tastings and photo, after confirmation in the UI
+store.active.get()                    // ActiveRoast | null, read from roast-active
+store.active.save(activeRoast)        // rewrite roast-active (every live event)
+store.active.discard()                // remove roast-active; writes no Roast
+store.active.finish()                 // at Cool: save it as a Roast, then remove roast-active; returns the Roast
 store.tastings.list({ roastId? }) / get(id) / save(t) / remove(id)
 store.settings.get() / save(settings)
 store.photos.put(blob) → photoId / get(photoId) → Blob | null / remove(photoId)
+store.exportAll({ includePhotos })    // → export object (§5 Settings)
+store.importAll(data, { mode })       // mode "merge" | "replace"; validates first; refused while roast-active exists
 store.subscribe(callback)             // fires after any change; returns an unsubscribe function
 ```
 
-- **localStorage backend (now).** Keys are `roast-beans`, `roast-roasts`, `roast-tastings`, `roast-settings` and `roast-schema` (the data version, for migrations). Each holds a JSON array or object. Every `save` of the active roast writes through immediately.
+- **`store.active` is the same code under every backend.** It always reads and writes localStorage `roast-active`. Only `finish()` touches the backend, through `roasts.save()`. On init, a `roast-active` whose `id` is already in `roasts` is removed (§3.2.1).
+- **localStorage backend (now).** Keys are `roast-beans`, `roast-roasts`, `roast-tastings`, `roast-settings`, `roast-active` and `roast-schema` (the data version, for migrations). Each holds a JSON array or object.
 - **Firestore backend (later).** Collections `users/{uid}/beans`, `users/{uid}/roasts` and `users/{uid}/tastings`, and the document `users/{uid}/meta/settings`. Offline persistence is enabled. On first sign-in, a one-time import copies localStorage data up if the cloud is empty.
 - Derived values live in a separate pure module (`web/derive.js`), never in either backend.
 
 ### 6.3 Photos
 
-There is one photo per roast. It is downscaled on the device to about 1600 px on the long edge, as JPEG, before saving. localStorage is too small for images, so the local backend keeps photo blobs in **IndexedDB** (database `roast-photos`), keyed by `photoId`. The Firestore phase moves them to Firebase Storage under `users/{uid}/photos/{photoId}`.
+There is one photo per roast. It is picked with `<input type="file" accept="image/*">`, which on iPhone offers the camera or the library. It is downscaled on the device to about 1600 px on the long edge, as JPEG, before saving.
+
+- **Photos work locally from the first build of the live roast.** Blobs are stored in **IndexedDB** (database `roast-photos`), keyed by `photoId`. localStorage is too small for images.
+- **IndexedDB stays the photo store under every backend.** The Firestore phase only adds sync: it uploads each photo to Firebase Storage at `users/{uid}/photos/{photoId}`, and downloads any missing ones into IndexedDB on other devices. Photos never depend on being signed in.
 
 ### 6.4 iOS details
 
@@ -209,6 +257,6 @@ There is one photo per roast. It is downscaled on the device to about 1600 px on
 
 ## 7. Later / out of scope for v1
 
-- JSON export and import for backup.
-- Overlaying several roasts' fan/heat timelines to compare them.
 - Rest-day reminders.
+
+The compare overlay and JSON export/import were moved into v1 (§5).

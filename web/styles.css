@@ -301,6 +301,31 @@ h1:focus { outline: none; } /* focused programmatically on navigation, for scree
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 .toast.error { color: var(--danger); border-color: var(--danger); }
 
+/* Persistent until tapped; sits above the tab bar (or the home indicator
+   when the tab bar is hidden on the live screen). */
+.update-toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--tabbar-h) + var(--safe-bottom) + 14px);
+  z-index: 30;
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  transform: translateX(-50%);
+}
+body.no-tabbar .update-toast { bottom: calc(var(--safe-bottom) + 16px); }
+.update-toast button {
+  min-height: 48px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 16px;
+  font-weight: 700;
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.45);
+}
+.update-toast button:active { filter: brightness(0.9); }
+
 .fatal {
   margin: calc(var(--safe-top) + 32px) 0 0;
   padding: 16px;
