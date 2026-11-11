@@ -25,10 +25,12 @@ web/              the app (served as-is; GitHub Pages root)
   ui.js           h() DOM helper, icons, shared controls (segmented, stepper, toast)
   units.js        g/oz and °C/°F conversion + formatting (weights, money, dates)
   derive.js       derived values (SPEC §4): pure functions, never persisted
-  roast-session.js  live-roast state changes (taps, merging, undo, toRoast): pure functions
+  roast-session.js  live-roast state changes (taps, merging, undo, toRoast), plan prompts, timeline
+                  validation/normalizing for the editor: pure functions
   wakelock.js     Screen Wake Lock with state reporting; image.js photo downscaling
   screens/        one module per tab; a tab's sub-pages are sibling modules (bean-detail, bean-form, purchase-form,
-                  roast-finish); roast.js is a screen without a tab (#/roast/new setup, #/roast/live, full screen)
+                  roast-detail, roast-editor, roast-finish); roast.js is a screen without a tab
+                  (#/roast/new[/<planId>] setup, #/roast/live full screen)
   store/          index.js (interface) · local.js (localStorage) · active.js (roast-active) · settings.js · photos.js (IndexedDB) · ids.js
 tests/            node --test unit tests for derive.js and roast-session.js (no dependencies; not served)
   sw.js           service worker; cache "roast-dev" in the repo, stamped at deploy

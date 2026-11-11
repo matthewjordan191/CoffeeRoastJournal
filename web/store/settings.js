@@ -7,6 +7,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   defaultBatchG: 225,  // grams (canonical)
   defaultFan: 9,       // 1–9
   defaultHeat: 1,      // 1–9
+  promptChime: false,  // chime with "Roast this again" prompts (SPEC §2.3)
 });
 
 export const LIMITS = Object.freeze({
@@ -20,6 +21,7 @@ const CHECKS = {
   defaultBatchG: v => Number.isFinite(v) && v >= LIMITS.batchG.min && v <= LIMITS.batchG.max,
   defaultFan: v => Number.isInteger(v) && v >= LIMITS.control.min && v <= LIMITS.control.max,
   defaultHeat: v => Number.isInteger(v) && v >= LIMITS.control.min && v <= LIMITS.control.max,
+  promptChime: v => typeof v === "boolean",
 };
 
 /** Field names in `s` that are invalid (empty array = valid). Unknown keys are invalid too. */

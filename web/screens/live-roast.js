@@ -8,7 +8,7 @@
 import { store } from "../store/index.js";
 import { goBack, navigate } from "../router.js";
 import { h, icon, mount, toast, confirmSheet, inputSheet, holdButton } from "../ui.js";
-import { formatClock, formatWeight, formatTemp, parseDecimal, fToC } from "../units.js";
+import { formatClock, formatDelta, formatWeight, formatTemp, parseDecimal, fToC } from "../units.js";
 import { elapsedS, developmentS, developmentRatio, milestoneT } from "../derive.js";
 import * as session from "../roast-session.js";
 import { createWakeLock } from "../wakelock.js";
@@ -21,8 +21,13 @@ export async function render(root) {
     navigate("#/roasts", { replace: true });
     return;
   }
-  const settings = await store.settings.get();
+  let settings = await store.settings.get();
   document.title = `Roasting ${a.beanName} · Roast Journal`;
+
+  // "Roast this again" (SPEC §2.3): the earlier roast is the plan.
+  const plan = a.planRoastId ? await store.roasts.get(a.planRoastId) : null;
+  const changes = session.planChanges(plan);
+  const announced = new Set();
 
   // Set while Cool/Discard hand off to another route, so the store
   // subscription below doesn't race them with its own redirect.
@@ -64,6 +69,47 @@ export async function render(root) {
   const clock = h("p", { class: "live-clock", role: "timer", "aria-label": "Elapsed time" });
   const status = h("p", { class: "live-status", "aria-live": "polite" });
 
+  // ---- plan prompts: a fixed-height slot, so nothing below it jumps when a
+  // prompt appears (a moving target is a mis-tap waiting to happen).
+  let audio = null;
+  const unlockAudio = () => {
+    if (!settings.promptChime) return;
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!audio && Ctx) audio = new Ctx();
+    audio?.resume?.().catch(() => {});
+  };
+  const chime = () => {
+    if (!settings.promptChime || !audio) return;
+    const t0 = audio.currentTime;
+    const osc = audio.createOscillator();
+    const gain = audio.createGain();
+    osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.0001, t0);
+    gain.gain.exponentialRampToValueAtTime(0.5, t0 + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.4);
+    osc.connect(gain).connect(audio.destination);
+    osc.start(t0);
+    osc.stop(t0 + 0.45);
+  };
+  const planText = h("span", { class: "plan-text" });
+  const chimeBtn = h("button", { type: "button", class: "chime-btn" });
+  const paintChime = () => {
+    chimeBtn.textContent = settings.promptChime ? "Chime on" : "Chime off";
+    chimeBtn.setAttribute("aria-pressed", String(settings.promptChime));
+  };
+  chimeBtn.addEventListener("click", async () => {
+    try {
+      settings = await store.settings.save({ promptChime: !settings.promptChime });
+      paintChime();
+      unlockAudio();   // iOS only allows audio after a tap
+      chime();
+    } catch (err) {
+      toast(err.message, { error: true });
+    }
+  });
+  paintChime();
+  const planSlot = plan ? h("div", { class: "plan-slot", role: "status", "aria-live": "polite" }, planText, chimeBtn) : null;
+
   // ---- fan / heat steppers
   function controlRow(control) {
     const value = h("span", { class: "ctl-value" });
@@ -93,6 +139,7 @@ export async function render(root) {
   // ---- milestones
   const milestoneButtons = session.LIVE_MILESTONES.map(({ type, label }) => {
     const time = h("span", { class: "ms-time" });
+    const target = milestoneT(plan, type);
     const btn = h("button", { type: "button", class: "ms-btn" }, h("span", { class: "ms-label" }, label), time);
     btn.addEventListener("click", async () => {
       const pressedAt = Date.now();
@@ -108,7 +155,7 @@ export async function render(root) {
       });
       if (ok) apply(session.moveMilestone(a, type, Date.now()));
     });
-    return { type, btn, time };
+    return { type, btn, time, target };
   });
 
   // ---- temp / note / undo
@@ -205,7 +252,25 @@ export async function render(root) {
     for (const m of milestoneButtons) {
       const t = milestoneT(a, m.type);
       m.btn.classList.toggle("done", t != null);
-      m.time.textContent = t == null ? "Tap to mark" : formatClock(t);
+      if (t == null) m.time.textContent = m.target != null ? `Target ${formatClock(m.target)}` : "Tap to mark";
+      else m.time.textContent = m.target != null ? `${formatClock(t)} (${formatDelta(t - m.target)})` : formatClock(t);
+    }
+
+    if (planSlot) {
+      const { active, next } = session.promptState(changes, a, elapsed);
+      const name = c => `${CONTROL_LABEL[c.control]} → ${c.value}`;
+      if (active.length) {
+        const c = active[0];
+        planText.textContent = c.inS > 0 ? `In ${Math.ceil(c.inS)} s: ${name(c)}` : `Now: ${name(c)}`;
+        if (active.length > 1) planText.textContent += `  (+${active.length - 1} more)`;
+        for (const x of active) {
+          const key = `${x.t}|${x.control}`;
+          if (!announced.has(key)) { announced.add(key); chime(); }
+        }
+      } else {
+        planText.textContent = next ? `Next: ${name(next)} at ${formatClock(next.t)}` : "Plan: no more changes";
+      }
+      planSlot.classList.toggle("due", active.length > 0);
     }
     const what = session.undoPreview(a);
     undoBtn.disabled = !what;
@@ -228,6 +293,7 @@ export async function render(root) {
       topBar,
       wakeBanner,
       h("div", { class: "live-head" }, beanLine, clock, status),
+      planSlot,
       h("div", { class: "ctl-group" }, fanRow.row, heatRow.row),
       h("div", { class: "ms-grid" }, milestoneButtons.map(m => m.btn)),
       h("div", { class: "act-row" }, tempBtn, noteBtn, undoBtn),
@@ -239,7 +305,7 @@ export async function render(root) {
   const onVisible = () => { if (document.visibilityState === "visible") refresh(); };
   document.addEventListener("visibilitychange", onVisible);
   // Any tap is a user gesture: use it to get keep-awake back if it was refused or lost.
-  const onPointer = () => lock.retry();
+  const onPointer = () => { lock.retry(); unlockAudio(); };
   root.addEventListener("pointerdown", onPointer);
 
   // Another tab (or a store-level cleanup) changed the roast in progress.
@@ -256,5 +322,6 @@ export async function render(root) {
     root.removeEventListener("pointerdown", onPointer);
     unsubscribe();
     lock.stop();
+    audio?.close?.().catch(() => {});
   };
 }

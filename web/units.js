@@ -43,6 +43,35 @@ export function formatClock(s) {
   return h ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
 }
 
+/** Signed difference as a clock: +12 → "+0:12", −65 → "−1:05", 0 → "±0:00". */
+export function formatDelta(s) {
+  if (s == null || !Number.isFinite(s)) return "—";
+  const r = Math.round(s);
+  return `${r > 0 ? "+" : r < 0 ? "−" : "±"}${formatClock(Math.abs(r))}`;
+}
+
+/**
+ * Parse a typed roast time to seconds. Accepts "7:40", "07:40", "7:40.5",
+ * "1:02:05", and — because the iPhone number pad has no colon — bare
+ * digits read as m:ss: "740" → 7:40, "45" → 0:45, "1205" → 12:05.
+ * Returns null for empty input, NaN for anything else (incl. seconds ≥ 60).
+ */
+export function parseClock(text) {
+  const s = String(text ?? "").trim();
+  if (s === "") return null;
+  let m = /^(\d+):([0-5]?\d)(?:\.(\d))?$/.exec(s);
+  if (m) return +m[1] * 60 + +m[2] + (m[3] ? +m[3] / 10 : 0);
+  m = /^(\d+):([0-5]\d):([0-5]\d)$/.exec(s);
+  if (m) return +m[1] * 3600 + +m[2] * 60 + +m[3];
+  m = /^(\d{1,4})$/.exec(s);
+  if (m) {
+    const digits = m[1].padStart(3, "0");
+    const sec = +digits.slice(-2);
+    return sec < 60 ? +digits.slice(0, -2) * 60 + sec : NaN;
+  }
+  return NaN;
+}
+
 /** Dollars: "$12.50". */
 export function formatMoney(n) {
   return n == null || !Number.isFinite(n) ? "—" : `$${n.toFixed(2)}`;

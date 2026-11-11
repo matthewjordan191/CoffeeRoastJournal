@@ -86,7 +86,7 @@ export async function render(root, { beanId }) {
   const roastList = beanRoasts.length
     ? h("ul", { class: "list card" }, beanRoasts.map(r =>
         h("li", null,
-          h("a", { class: "list-row", href: `#/roasts/${encodeURIComponent(r.id)}/finish` },
+          h("a", { class: "list-row", href: `#/roasts/${encodeURIComponent(r.id)}` },
             h("div", { class: "list-main" },
               h("span", { class: "list-title" }, new Date(r.chargedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })),
               h("span", { class: "list-meta" }, r.roastLevel || "No level")),

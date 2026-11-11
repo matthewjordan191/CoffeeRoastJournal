@@ -220,3 +220,112 @@ export function toRoast(a, coolPressMs) {
     photoId: null,
   };
 }
+
+// ---------------------------------------------------------------- "Roast this again" (SPEC §2.3)
+
+export const PROMPT_LEAD_S = 15;  // prompt this long before each planned change
+export const PROMPT_HOLD_S = 10;  // …and keep it up this long after, unless it's done
+
+/** The plan's fan/heat changes after t = 0 and before its Cool, in time order. */
+export function planChanges(plan) {
+  const cool = plan?.milestones?.find(m => m.type === "cool")?.t ?? Infinity;
+  return (plan?.controlEvents ?? [])
+    .filter(e => e.t > 0 && e.t < cool)
+    .slice()
+    .sort(byT);
+}
+
+/**
+ * Which planned changes to prompt for right now.
+ *   active: changes within [t − 15 s, t + 10 s) not yet made, each with
+ *           `inS` = seconds until its planned time (negative once past)
+ *   next:   the first change whose prompt hasn't started yet, or null
+ * A change counts as made once the current setting equals its value inside
+ * its prompt window.
+ */
+export function promptState(changes, a, elapsedS) {
+  const active = [];
+  let next = null;
+  for (const c of changes) {
+    const opens = c.t - PROMPT_LEAD_S;
+    if (elapsedS < opens) { next ??= c; continue; }
+    if (elapsedS >= c.t + PROMPT_HOLD_S) continue;
+    if (currentValue(a, c.control) === c.value) continue;
+    active.push({ ...c, inS: c.t - elapsedS });
+  }
+  return { active, next };
+}
+
+// ---------------------------------------------------------------- editing a saved roast
+
+export const EDITABLE_MILESTONES = [...LIVE_MILESTONES, { type: "cool", label: "Cool" }];
+
+/**
+ * Check an edited or hand-entered timeline (SPEC §2.2 "recorded events can
+ * be edited"; §5 manual log). Returns a list of { key, message }; empty
+ * means valid. Keys: "ms:<type>", "ctl:<index>", "temp:<index>", "note:<index>".
+ */
+export function validateTimeline({ milestones, controlEvents, displayTemps = [], notesLog = [] }) {
+  const errors = [];
+  const t = type => milestones.find(m => m.type === type)?.t ?? null;
+  const cool = t("cool");
+  if (cool == null) errors.push({ key: "ms:cool", message: "Cool time is required." });
+  else if (!(cool > 0)) errors.push({ key: "ms:cool", message: "Cool must be after charge." });
+  for (const { type, label } of LIVE_MILESTONES) {
+    const v = t(type);
+    if (v == null) continue;
+    if (!(v > 0)) errors.push({ key: `ms:${type}`, message: `${label} must be after charge.` });
+    else if (cool != null && v > cool) errors.push({ key: `ms:${type}`, message: `${label} must be before Cool.` });
+  }
+  const order = [["yellowing", "fcStart"], ["fcStart", "fcEnd"], ["fcStart", "sc"]];
+  for (const [a, b] of order) {
+    if (t(a) != null && t(b) != null && t(b) <= t(a)) {
+      const la = LIVE_MILESTONES.find(m => m.type === a).label;
+      const lb = LIVE_MILESTONES.find(m => m.type === b).label;
+      errors.push({ key: `ms:${b}`, message: `${lb} must be after ${la}.` });
+    }
+  }
+  for (const control of ["fan", "heat"]) {
+    if (!controlEvents.some(e => e.control === control && e.t === 0)) {
+      errors.push({ key: `start:${control}`, message: `Starting ${control} is required.` });
+    }
+  }
+  controlEvents.forEach((e, i) => {
+    if (!Number.isInteger(e.value) || e.value < CONTROL_MIN || e.value > CONTROL_MAX) {
+      errors.push({ key: `ctl:${i}`, message: "Setting must be 1–9." });
+    } else if (e.t !== 0 && !(e.t > 0)) {
+      errors.push({ key: `ctl:${i}`, message: "Enter a time after charge." });
+    }
+  });
+  displayTemps.forEach((r, i) => {
+    if (!(r.t >= 0)) errors.push({ key: `temp:${i}`, message: "Enter a time." });
+    else if (!Number.isFinite(r.displayC)) errors.push({ key: `temp:${i}`, message: "Enter a temperature." });
+  });
+  notesLog.forEach((n, i) => {
+    if (!(n.t >= 0)) errors.push({ key: `note:${i}`, message: "Enter a time." });
+    else if (!String(n.text ?? "").trim()) errors.push({ key: `note:${i}`, message: "Enter the note, or delete it." });
+  });
+  return errors;
+}
+
+/**
+ * Tidy an edited timeline into stored shape: sort everything by t, put the
+ * charge milestone at 0, set totalTimeS from Cool, and keep coolingDone at
+ * cool + COOLING_S (the SR800 always cools for 3:00).
+ */
+export function normalizeTimeline(roast) {
+  const cool = roast.milestones.find(m => m.type === "cool")?.t ?? null;
+  const milestones = [
+    { type: "charge", t: 0 },
+    ...roast.milestones.filter(m => m.type !== "charge" && m.type !== "coolingDone"),
+  ];
+  if (cool != null) milestones.push({ type: "coolingDone", t: round1(cool + COOLING_S) });
+  return {
+    ...roast,
+    milestones: milestones.sort(byT),
+    controlEvents: roast.controlEvents.slice().sort(byT),
+    displayTemps: (roast.displayTemps ?? []).slice().sort(byT),
+    notesLog: (roast.notesLog ?? []).slice().sort(byT),
+    totalTimeS: cool,
+  };
+}

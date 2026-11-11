@@ -1,19 +1,28 @@
 // Roasts (SPEC §5): Start Roast, the in-progress banner, and history.
-// Routes: #/roasts, #/roasts/<id>/finish. (Roast detail comes later; until
-// then a history row opens its finish form.)
+// Routes:
+//   #/roasts                list
+//   #/roasts/log            backfill a past roast by hand
+//   #/roasts/<id>           detail
+//   #/roasts/<id>/edit      edit times, values, events
+//   #/roasts/<id>/finish    roasted weight, level, rating, notes, photo
 import { store } from "../store/index.js";
 import { h, icon, mount, screenHeader } from "../ui.js";
 import { formatClock, formatWeight } from "../units.js";
-import { elapsedS, totalTimeS, developmentRatio, weightLossPct } from "../derive.js";
+import { elapsedS, totalTimeS, developmentRatio, weightLossPct, daysSinceRoast, isRested } from "../derive.js";
 import * as finish from "./roast-finish.js";
+import * as detail from "./roast-detail.js";
+import * as editor from "./roast-editor.js";
 
 export const title = "Roasts";
 
 export function render(root, { params }) {
   const [id, sub] = params;
-  if (id && sub === "finish") return finish.render(root, { roastId: id });
-  if (id) throw new Error("That page doesn't exist.");
-  return renderList(root);
+  if (!id) return renderList(root);
+  if (id === "log" && !sub) return editor.render(root, { roastId: null });
+  if (!sub) return detail.render(root, { roastId: id });
+  if (sub === "finish") return finish.render(root, { roastId: id });
+  if (sub === "edit") return editor.render(root, { roastId: id });
+  throw new Error("That page doesn't exist.");
 }
 
 async function renderList(root) {
@@ -40,6 +49,7 @@ async function renderList(root) {
   } else {
     top = h("a", { class: "btn btn-accent btn-block btn-start", href: "#/roast/new" }, icon("roasts"), "Start roast");
   }
+  const logLink = h("a", { class: "log-link", href: "#/roasts/log" }, "Log a past roast by hand");
 
   const list = roasts.length
     ? h("ul", { class: "list card" }, roasts.map(r => {
@@ -48,11 +58,17 @@ async function renderList(root) {
         const loss = weightLossPct(r);
         const date = new Date(r.chargedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" });
         const meta = [date, formatClock(total), dtr == null ? null : `DTR ${dtr.toFixed(1)}%`, r.roastLevel].filter(Boolean).join(" · ");
+        const days = daysSinceRoast(r);
+        const rested = isRested(r);
         return h("li", null,
-          h("a", { class: "list-row", href: `#/roasts/${encodeURIComponent(r.id)}/finish` },
+          h("a", { class: "list-row", href: `#/roasts/${encodeURIComponent(r.id)}` },
             h("div", { class: "list-main" },
               h("span", { class: "list-title" }, r.beanName),
-              h("span", { class: "list-meta" }, meta)),
+              h("span", { class: "list-meta" }, meta),
+              h("span", { class: "list-meta row-extras" },
+                r.rating ? h("span", { class: "stars-inline", "aria-label": `${r.rating} of 5 stars` }, "★".repeat(r.rating)) : null,
+                days == null ? null : h("span", { class: `day-chip${rested === false ? " resting" : ""}` },
+                  rested === false ? `Day ${days} of ${r.restDaysPlanned}` : `Day ${days}`))),
             h("div", { class: "list-side" },
               loss == null
                 ? h("span", { class: "pill pill-warn" }, "Unfinished")
@@ -67,7 +83,7 @@ async function renderList(root) {
 
   mount(root,
     screenHeader(title),
-    h("div", { class: "roasts-top" }, top),
+    h("div", { class: "roasts-top" }, top, logLink),
     roasts.length ? h("h2", { class: "section-title history-title" }, "History") : null,
     list);
 

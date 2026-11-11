@@ -35,6 +35,8 @@ const APP_SHELL = [
   "./screens/roast-setup.js",
   "./screens/live-roast.js",
   "./screens/roast-finish.js",
+  "./screens/roast-detail.js",
+  "./screens/roast-editor.js",
   "./screens/beans.js",
   "./screens/bean-detail.js",
   "./screens/bean-form.js",

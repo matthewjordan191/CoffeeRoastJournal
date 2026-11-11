@@ -41,7 +41,7 @@ A personal PWA for logging coffee roasts on a Fresh Roast SR800, tracking green 
 - **Full screen:** the live roast is its own route (`#/roast/live`), and **the tab bar is hidden** while it's shown. Leaving it (Back, or a Minimize button) does not stop the roast. The Roasts screen shows a banner that returns to it.
 - Show elapsed time, the current fan and heat, the last milestone, and running development time once first crack has started.
 - Only one roast can be in progress at a time, because there is a single `roast-active` key. It can be discarded with a confirmation, which removes the key and writes nothing.
-- Recorded events can be edited after the roast: adjust times, change values, delete events.
+- Recorded events can be edited after the roast (`#/roasts/<id>/edit`): adjust times, change values, delete events, add missing ones. Times are typed as m:ss. Bare digits also work (`740` → 7:40), because the iPhone number pad has no colon. Untouched times keep their stored 0.1 s precision. Cool is required. Milestones must be after charge and before Cool, in order: Yellowing < FC < FC end, and FC < Second crack. Saving keeps `coolingDone` at Cool + 3:00 and `totalTimeS` equal to Cool.
 
 ### 2.3 Roast this again
 
@@ -49,7 +49,8 @@ A personal PWA for logging coffee roasts on a Fresh Roast SR800, tracking green 
 
 - **Setup is pre-filled** with the same bean, the same green weight, and the earlier roast's starting fan and heat (its t = 0 events, not the Settings defaults). Every field stays editable. If that bean is archived or doesn't have enough stock left, show a warning without blocking.
 - **Milestone targets:** each milestone button shows the earlier roast's time for it as a target (e.g. "FC target 7:40"). Once tapped, it also shows the difference (e.g. "+0:12").
-- **Fan/heat prompts:** about **15 s before** each fan or heat change the earlier roast made after t = 0 (and before its Cool), show a prompt such as "In 15 s: Heat → 7", with a countdown. The prompt clears when I make that change, or about 10 s after its planned time. Prompts are visual. An optional chime can be turned on from the live screen; iOS web apps can't vibrate.
+- **Fan/heat prompts:** about **15 s before** each fan or heat change the earlier roast made after t = 0 (and before its Cool), show a prompt such as "In 15 s: Heat → 7", with a countdown. The prompt clears when I make that change, or about 10 s after its planned time. Prompts are visual. They sit in a fixed-height slot that otherwise shows the next planned change, so nothing on the screen moves when a prompt appears. An optional chime can be turned on from the live screen (saved as `promptChime` in Settings). iOS web apps can't vibrate.
+- **Route:** `#/roast/new/<earlier roast id>`.
 - The plan (the earlier roast's id) is held only in `roast-active`, and is not saved on the finished Roast.
 
 ## 3. Data model
@@ -175,6 +176,7 @@ ActiveRoast = {
 | `defaultBatchG` | number | `225` |
 | `defaultFan` | 1–9 | `9` |
 | `defaultHeat` | 1–9 | `1` |
+| `promptChime` | boolean | `false`: chime with "Roast this again" prompts (§2.3), toggled on the live screen |
 
 ## 4. Derived values (computed, never stored)
 
@@ -195,7 +197,9 @@ ActiveRoast = {
 
 Bottom tab bar: **Roasts · Beans · Tastings · Stats · Settings**. It is hidden on the live roast screen (§2.2).
 
-- **Roasts.** History, newest first: bean name, date, level, weight loss %, DTR, rating, days since roast. A prominent **Start Roast** button. While `roast-active` exists, a banner returns to the live screen. Roast detail shows a timeline of milestones, control changes, temperature readings and notes, plus the derived values. It has **Add tasting**, **Edit**, **Roast this again** (§2.3) and **Compare**.
+- **Roasts.** History, newest first: bean name, date, total time, DTR, level, rating, days since roast ("Day 1 of 3" while still resting), and weight loss % (or **Unfinished**). Rows open the roast detail. There's a prominent **Start Roast** button and a **Log a past roast by hand** link. While `roast-active` exists, a banner returns to the live screen.
+  - **Roast detail** (`#/roasts/<id>`): the photo, the derived values (§4, including time at each setting and cost), one merged timeline of milestones, fan/heat changes, display temps and notes, and a link to the bean. It has **Edit** (§2.2), **Finish details** (the finish form), **Roast this again** (§2.3), and **Delete** with an in-app confirmation. Deleting also removes the roast's tastings and photo, and returns its green weight to stock. **Add tasting** and **Compare** come with the Tastings and Compare work.
+  - **Log a past roast** (`#/roasts/log`): the same editor, for backfilling. Pick the bean, the date and time, and the green weight. Type the milestone times and the starting fan/heat, then add fan/heat changes, display temps and timed notes. Saving opens the finish form for the results.
   - **Compare overlay:** pick up to 4 roasts. Earlier roasts of the same bean are suggested first. Their fan and heat settings are drawn as step lines over time, with milestone markers, all aligned at charge. A toggle aligns them at first crack start instead. Below the chart is a table of milestone times, development time, DTR and weight loss side by side. Inline SVG, no library.
 - **Beans.** Active beans with remaining stock, with an archived toggle. Bean detail shows the purchases list (with **Add purchase**), the roasts of this bean, and the average tasting score.
 - **Tastings.** List, newest first: bean, roast date, method, score, tags. Add a tasting from a chosen roast.

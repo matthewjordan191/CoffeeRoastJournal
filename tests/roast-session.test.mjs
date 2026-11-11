@@ -155,3 +155,89 @@ test("toRoast: cool at the press start, totalTimeS, live-only fields dropped", (
   assert.equal(r.photoId, null);
   assert.deepEqual(events(r, "heat"), [[0, 1], [500, 2]]);
 });
+
+// ---------------------------------------------------------------- roast this again
+
+const plan = {
+  milestones: [{ type: "charge", t: 0 }, { type: "fcStart", t: 460 }, { type: "cool", t: 600 }],
+  controlEvents: [
+    { t: 0, control: "fan", value: 9 }, { t: 0, control: "heat", value: 1 },
+    { t: 300, control: "heat", value: 7 }, { t: 60, control: "heat", value: 5 },
+    { t: 650, control: "fan", value: 9 },   // after cool: not a prompt
+  ],
+};
+
+test("planChanges: after t = 0, before cool, in time order", () => {
+  assert.deepEqual(s.planChanges(plan).map(c => [c.t, c.control, c.value]), [[60, "heat", 5], [300, "heat", 7]]);
+  assert.deepEqual(s.planChanges(null), []);
+});
+
+test("promptState: prompt 15 s ahead, clear when made or 10 s after", () => {
+  const changes = s.planChanges(plan);
+  const a = fresh(9, 1);
+  assert.deepEqual(s.promptState(changes, a, 40), { active: [], next: changes[0] });
+  let st = s.promptState(changes, a, 46);
+  assert.equal(st.active.length, 1);
+  assert.equal(st.active[0].inS, 14);
+  assert.equal(st.next, changes[1]);
+  st = s.promptState(changes, a, 65);
+  assert.equal(st.active[0].inS, -5, "still up just after the planned time");
+  assert.equal(s.promptState(changes, a, 70).active.length, 0, "gone 10 s after");
+  // made the change → cleared
+  let b = s.tapControl(a, "heat", +4, at(55));
+  assert.equal(s.promptState(changes, b, 56).active.length, 0);
+  // already at the target value → never prompted
+  b = s.tapControl(fresh(9, 1), "heat", +4, at(20));
+  assert.equal(s.promptState(changes, b, 50).active.length, 0);
+});
+
+// ---------------------------------------------------------------- editing
+
+const goodTimeline = () => ({
+  milestones: [{ type: "charge", t: 0 }, { type: "yellowing", t: 270 }, { type: "fcStart", t: 480 }, { type: "cool", t: 600 }],
+  controlEvents: [{ t: 0, control: "fan", value: 9 }, { t: 0, control: "heat", value: 1 }, { t: 60, control: "heat", value: 5 }],
+  displayTemps: [{ t: 300, displayC: 200 }],
+  notesLog: [{ t: 310, text: "smoke" }],
+});
+
+test("validateTimeline accepts a sound timeline", () => {
+  assert.deepEqual(s.validateTimeline(goodTimeline()), []);
+});
+
+test("validateTimeline: cool required, milestones before cool and in order", () => {
+  const keys = tl => s.validateTimeline(tl).map(e => e.key);
+  let tl = goodTimeline(); tl.milestones = tl.milestones.filter(m => m.type !== "cool");
+  assert.deepEqual(keys(tl), ["ms:cool"]);
+  tl = goodTimeline(); tl.milestones.find(m => m.type === "fcStart").t = 650;
+  assert.deepEqual(keys(tl), ["ms:fcStart"]);
+  tl = goodTimeline(); tl.milestones.find(m => m.type === "fcStart").t = 200;
+  assert.deepEqual(keys(tl), ["ms:fcStart"], "first crack before yellowing");
+  tl = goodTimeline(); tl.milestones.push({ type: "sc", t: 470 });
+  assert.deepEqual(keys(tl), ["ms:sc"], "second crack before first crack");
+});
+
+test("validateTimeline: starting settings, values, rows", () => {
+  const keys = tl => s.validateTimeline(tl).map(e => e.key);
+  let tl = goodTimeline(); tl.controlEvents = tl.controlEvents.filter(e => !(e.control === "heat" && e.t === 0));
+  assert.deepEqual(keys(tl), ["start:heat"]);
+  tl = goodTimeline(); tl.controlEvents[2].value = 10;
+  assert.deepEqual(keys(tl), ["ctl:2"]);
+  tl = goodTimeline(); tl.controlEvents[2].t = NaN;
+  assert.deepEqual(keys(tl), ["ctl:2"]);
+  tl = goodTimeline(); tl.notesLog[0].text = "  ";
+  assert.deepEqual(keys(tl), ["note:0"]);
+  tl = goodTimeline(); tl.displayTemps[0].displayC = NaN;
+  assert.deepEqual(keys(tl), ["temp:0"]);
+});
+
+test("normalizeTimeline: sorted, totalTimeS from cool, cooling end kept at cool + 3:00", () => {
+  const tl = goodTimeline();
+  tl.controlEvents.reverse();
+  tl.milestones.push({ type: "coolingDone", t: 999 });
+  tl.milestones.find(m => m.type === "cool").t = 620;
+  const r = s.normalizeTimeline(tl);
+  assert.equal(r.totalTimeS, 620);
+  assert.deepEqual(r.milestones.map(m => m.type), ["charge", "yellowing", "fcStart", "cool", "coolingDone"]);
+  assert.equal(r.milestones.at(-1).t, 800);
+  assert.deepEqual(r.controlEvents.map(e => e.t), [0, 0, 60]);
+});

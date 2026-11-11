@@ -13,7 +13,7 @@ export async function render(root, { roastId }) {
   const [roast, settings] = await Promise.all([store.roasts.get(roastId), store.settings.get()]);
   if (!roast) {
     mount(root,
-      subHeader({ title: "Roast not found", backLabel: "Roasts", onBack: () => goBack("#/roasts") }),
+      subHeader({ title: "Roast not found", backLabel: "Back", onBack: () => goBack("#/roasts") }),
       h("p", { class: "muted-block" }, "This roast may have been deleted."));
     return;
   }
@@ -173,14 +173,14 @@ export async function render(root, { roastId }) {
       });
       pendingBlob = null;
       toast("Roast saved");
-      goBack("#/roasts");
+      goBack(`#/roasts/${encodeURIComponent(roastId)}`);
     } catch (err) {
       toast(err.message, { error: true });
     }
   }
 
   mount(root,
-    subHeader({ title: roast.beanName, subtitle: `Roasted ${when}`, backLabel: "Roasts", onBack: () => goBack("#/roasts") }),
+    subHeader({ title: roast.beanName, subtitle: `Roasted ${when}`, backLabel: "Back", onBack: () => goBack(`#/roasts/${encodeURIComponent(roastId)}`) }),
     coolCard,
     h("section", { class: "section" }, h("h2", { class: "section-title" }, "Roast"), h("div", { class: "card summary-card" }, summary)),
     h("form", { class: "form", novalidate: true, onsubmit: save },
