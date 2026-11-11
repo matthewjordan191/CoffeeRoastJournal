@@ -5,6 +5,46 @@
 // A screen module exports `title` and `render(root, { params })`. render may
 // be async and may return a cleanup function, called when the screen is left.
 
+// Each history entry this app creates is stamped with its position
+// (history.state.roastIdx), so an on-screen Back button knows whether
+// stepping back stays inside the app. Position 0 is wherever the app was
+// opened — e.g. straight on a deep link like #/beans/<id> — and Back from
+// there goes to the parent screen instead of leaving the app. The stamp
+// lives in history.state, so it survives reloads, and revisiting a route
+// can't be mistaken for going back.
+let position = 0;
+let stamped = false;   // has any entry been stamped yet in this page load?
+let replacing = false;
+
+function track() {
+  const idx = history.state?.roastIdx;
+  if (Number.isInteger(idx)) {
+    position = idx;                       // Back/Forward/reload onto a known entry
+  } else {
+    if (stamped && !replacing) position += 1; // a new entry pushed on top
+    history.replaceState({ ...(history.state ?? {}), roastIdx: position }, "");
+  }
+  stamped = true;
+  replacing = false;
+}
+
+/** Go to a route. `replace` swaps the current history entry (e.g. after saving a form). */
+export function navigate(hash, { replace = false } = {}) {
+  if (hash === location.hash) return;
+  if (replace) {
+    replacing = true;
+    location.replace(hash);
+  } else {
+    location.hash = hash;
+  }
+}
+
+/** Step back within the app; if there's no in-app history, replace with `fallback`. */
+export function goBack(fallback) {
+  if (position > 0) history.back();
+  else navigate(fallback, { replace: true });
+}
+
 export function startRouter({ view, nav, screens, fallback }) {
   let cleanup = null;
   let currentKey = null;
@@ -24,9 +64,10 @@ export function startRouter({ view, nav, screens, fallback }) {
     const { name, params } = parse();
     const screen = screens[name];
     if (!screen) {
-      location.replace(`#/${fallback}`); // replace: a bad/empty hash leaves no history entry
+      navigate(`#/${fallback}`, { replace: true }); // a bad/empty hash leaves no history entry
       return;
     }
+    track();
 
     if (currentKey) scrollByRoute.set(currentKey, window.scrollY);
     if (typeof cleanup === "function") cleanup();

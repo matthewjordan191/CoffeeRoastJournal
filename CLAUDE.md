@@ -21,10 +21,11 @@ Conventions are modeled on the sibling repo `../CocktailRecipeRepository` (vanil
 web/              the app (served as-is; GitHub Pages root)
   index.html      shell: #view + #tabbar + #toast
   app.js          entry module: builds tab bar, store.init(), starts router
-  router.js       hash routes "#/<screen>/<params…>"; screens export title + render(root, {params})
+  router.js       hash routes "#/<screen>/<params…>"; screens export title + render(root, {params}); navigate(), goBack(fallback)
   ui.js           h() DOM helper, icons, shared controls (segmented, stepper, toast)
-  units.js        g/oz and °C/°F conversion + formatting
-  screens/        one module per tab
+  units.js        g/oz and °C/°F conversion + formatting (weights, money, dates)
+  derive.js       derived values (SPEC §4): pure functions, never persisted
+  screens/        one module per tab; a tab's sub-pages are sibling modules (bean-detail, bean-form, purchase-form)
   store/          index.js (interface) · local.js (localStorage) · settings.js · photos.js (IndexedDB) · ids.js
   sw.js           service worker; cache "roast-dev" in the repo, stamped at deploy
   manifest.json, icon.svg, icon-192/512.png, apple-touch-icon.png
@@ -42,6 +43,8 @@ docs/SPEC.md      product spec
 - **The service worker cache name is stamped at deploy time.** `web/sw.js` keeps the literal `const CACHE = "roast-dev";`, and the workflow rewrites it to `roast-<first 12 chars of commit SHA>`. Don't edit that line by hand, and don't add a pre-commit hook for it. The deploy fails if the placeholder is missing.
 - **When you add, rename or delete a file under `web/`, update `APP_SHELL` in `web/sw.js`.** Run `node scripts/check-shell.js` to check. The deploy runs it too and fails on any mismatch.
 - Screens build DOM with `h()` and text nodes. Never put user data into `innerHTML`.
+- Use `mount(parent, …)` from `ui.js`, not `parent.append(…)`, whenever a child may be `null`. `append` renders a null child as the text "null".
+- Sub-pages use `subHeader({ backLabel, onBack: () => goBack(parentRoute) })`. After saving a form, use `goBack()`; after creating a record, use `navigate(…, { replace: true })`. That keeps forms out of the Back history.
 
 ## Notes
 

@@ -15,6 +15,7 @@ import { createLocalBackend } from "./local.js";
 
 export { StoreError } from "./local.js";
 export { DEFAULT_SETTINGS, LIMITS } from "./settings.js";
+export { newId } from "./ids.js"; // for ids of nested items, e.g. a bean's purchases
 
 const BACKENDS = {
   local: () => createLocalBackend(),

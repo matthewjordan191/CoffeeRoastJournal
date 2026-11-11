@@ -2,6 +2,7 @@
 // (SPEC §3); these helpers convert only at the edges — display and input.
 
 export const G_PER_OZ = 28.349523125;
+export const G_PER_LB = 453.59237; // green coffee is usually priced per pound
 
 const round = (v, places) => Math.round(v * 10 ** places) / 10 ** places;
 
@@ -23,10 +24,31 @@ export function weightValue(g, unit) {
   return trimZeros(v.toFixed(unit === "oz" ? 2 : 1));
 }
 
-/** Weight with its unit, for display: "225 g", "7.94 oz". */
+/** Weight with its unit, for display: "225 g", "1,360 g", "7.94 oz". */
 export function formatWeight(g, unit) {
-  const v = weightValue(g, unit);
-  return v === "" ? "—" : `${v} ${unit}`;
+  if (g == null || !Number.isFinite(g)) return "—";
+  const v = gramsTo(g, unit);
+  const text = v.toLocaleString("en-US", { maximumFractionDigits: unit === "oz" ? 2 : Math.abs(v) >= 100 ? 0 : 1 });
+  return `${text} ${unit}`;
+}
+
+/** Dollars: "$12.50". */
+export function formatMoney(n) {
+  return n == null || !Number.isFinite(n) ? "—" : `$${n.toFixed(2)}`;
+}
+
+/** Today's local date as YYYY-MM-DD (not UTC — late evening must not become tomorrow). */
+export function todayISO(d = new Date()) {
+  const pad = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** "2026-11-11" → "Nov 11, 2026", read as a local date. */
+export function formatDate(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso ?? "");
+  if (!m) return "—";
+  return new Date(+m[1], +m[2] - 1, +m[3])
+    .toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 export const cToF = c => c * 9 / 5 + 32;

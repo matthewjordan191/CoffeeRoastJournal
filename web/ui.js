@@ -21,6 +21,16 @@ export function h(tag, props, ...children) {
   return el;
 }
 
+/**
+ * Append children to `parent`, skipping null/false and flattening arrays.
+ * Use this instead of parent.append() for conditional content: the DOM's
+ * append() turns a null argument into the text "null".
+ */
+export function mount(parent, ...children) {
+  parent.append(...children.flat(Infinity).filter(c => c != null && c !== false));
+  return parent;
+}
+
 // 24×24 stroke icons, drawn for this app. currentColor so CSS sets the color.
 const ICON_PATHS = {
   roasts:
@@ -34,6 +44,9 @@ const ICON_PATHS = {
   stats: '<path d="M5 20v-6M10 20V8M15 20v-9M20 20V4"/>',
   settings:
     '<path d="M4 7h8M18 7h2M4 17h2M12 17h8"/><circle cx="15" cy="7" r="2.6"/><circle cx="9" cy="17" r="2.6"/>',
+  chevron: '<path d="M9.5 6l6 6-6 6"/>',
+  back: '<path d="M15 5.5L8.5 12l6.5 6.5"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
 };
 
 export function icon(name, className = "icon") {
@@ -52,6 +65,61 @@ export function screenHeader(title, ...actions) {
     h("h1", { tabindex: "-1" }, title),
     actions.length ? h("div", { class: "screen-actions" }, actions) : null,
   );
+}
+
+/**
+ * Header for a sub-page: a Back button row (plus an optional action on the
+ * right), then the large title. `onBack` decides where Back goes.
+ */
+export function subHeader({ title, backLabel, onBack, action, subtitle }) {
+  // Two siblings, not one wrapper: only the bar is sticky (it must be a
+  // direct child of the tall screen container); the big title scrolls away.
+  const frag = document.createDocumentFragment();
+  frag.append(
+    h("nav", { class: "sub-head-bar", "aria-label": "Page" },
+      h("button", { type: "button", class: "back-btn", onclick: onBack }, icon("back"), backLabel),
+      action ?? null),
+    h("header", { class: "sub-head" },
+      h("h1", { tabindex: "-1" }, title),
+      subtitle ? h("p", { class: "sub-head-subtitle" }, subtitle) : null),
+  );
+  return frag;
+}
+
+/**
+ * A labelled form field. `input` is any input/select/textarea element;
+ * `suffix` (e.g. "g") renders inside the box. Returns { el, input, setError }.
+ */
+export function field({ id, label, input, hint, suffix, optional = false }) {
+  input.id = id;
+  const hintEl = hint ? h("p", { class: "field-hint", id: `${id}-hint` }, hint) : null;
+  const errEl = h("p", { class: "field-error", id: `${id}-error` });
+  input.setAttribute("aria-describedby", [hintEl && `${id}-hint`, `${id}-error`].filter(Boolean).join(" "));
+  input.addEventListener("input", () => setError("")); // clear as soon as it's being fixed
+  const box = suffix
+    ? h("div", { class: "input-wrap input-wrap-full" }, input, h("span", { class: "suffix", "aria-hidden": "true" }, suffix))
+    : input;
+  const el = h("div", { class: "field" },
+    h("label", { class: "field-label", for: id }, label, optional ? h("span", { class: "optional" }, " optional") : null),
+    box, hintEl, errEl);
+  function setError(message) {
+    errEl.textContent = message || "";
+    input.toggleAttribute("aria-invalid", !!message);
+    (suffix ? box : input).classList.toggle("invalid", !!message);
+  }
+  return { el, input, setError };
+}
+
+/** Text-like input with the app's styling. Pass `value` to prefill. */
+export function textInput(props = {}) {
+  return h("input", { type: "text", autocomplete: "off", ...props, class: `text-input ${props.class ?? ""}`.trim() });
+}
+
+/** "Low" / "Out" stock pill (see derive.stockStatus); nothing when stock is fine. */
+export function stockBadge(status) {
+  if (status === "low") return h("span", { class: "pill pill-warn" }, "Low");
+  if (status === "out") return h("span", { class: "pill pill-danger" }, "Out");
+  return null;
 }
 
 /** Empty-state card for screens that aren't built yet. */
@@ -76,15 +144,17 @@ export function section(title, ...rows) {
  * Radio-button segmented control.
  * options: [{ value, label }]; onChange(value). Returns { el, set(value) }.
  */
-export function segmented({ name, label, options, value, onChange }) {
+export function segmented({ name, label, ariaLabel, options, value, onChange }) {
   const inputs = options.map(o =>
     h("input", { type: "radio", name, value: o.value, checked: o.value === value,
       onchange: e => e.target.checked && onChange(o.value) }));
-  const el = h("div", { class: "row" },
-    h("span", { class: "row-label", id: `${name}-label` }, label),
-    h("div", { class: "seg", role: "radiogroup", "aria-labelledby": `${name}-label` },
-      options.map((o, i) => h("label", null, inputs[i], h("span", null, o.label)))),
-  );
+  const labels = options.map((o, i) => h("label", null, inputs[i], h("span", null, o.label)));
+  // With a label: a settings row. Without (ariaLabel only): just the control.
+  const el = label
+    ? h("div", { class: "row" },
+        h("span", { class: "row-label", id: `${name}-label` }, label),
+        h("div", { class: "seg", role: "radiogroup", "aria-labelledby": `${name}-label` }, labels))
+    : h("div", { class: "seg seg-full", role: "radiogroup", "aria-label": ariaLabel }, labels);
   return { el, set(v) { inputs.forEach(i => { i.checked = i.value === v; }); } };
 }
 
