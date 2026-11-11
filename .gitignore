@@ -1,0 +1,4 @@
+node_modules/
+.claude/settings.local.json
+_*_tmp/
+_verify_*/

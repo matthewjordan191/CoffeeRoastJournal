@@ -1,0 +1,17 @@
+{
+  "name": "Coffee Roast Journal",
+  "short_name": "Roasts",
+  "description": "Log Fresh Roast SR800 roasts, green coffee stock and tastings.",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#14110f",
+  "theme_color": "#14110f",
+  "icons": [
+    { "src": "./icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" },
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

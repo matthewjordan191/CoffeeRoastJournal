@@ -1,0 +1,49 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check service worker file list
+        run: node scripts/check-shell.js
+
+      # Give each deploy its own cache name so installed copies pick up the
+      # new files. Fails the deploy if the placeholder isn't found, rather
+      # than shipping a worker that never updates.
+      - name: Stamp service worker cache name
+        run: |
+          STAMP="roast-${GITHUB_SHA::12}"
+          sed -i "s/^const CACHE = \"roast-dev\";/const CACHE = \"$STAMP\";/" web/sw.js
+          grep -q "^const CACHE = \"$STAMP\";" web/sw.js || { echo "::error::cache placeholder not found in web/sw.js"; exit 1; }
+          echo "Cache name: $STAMP"
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload web folder
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
